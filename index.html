@@ -10,22 +10,32 @@ canvas { border:8px solid #00ff41; box-shadow:0 0 40px #00ff41; image-rendering:
 height: auto;
 touch-action: none;
 }
-.info { font-size:22px; text-shadow:0 0 10px #00ff41; margin:10px; }
-h1 { text-shadow: 0 0 20px #00ff41; margin: 8px 0 5px 0; font-size: 28px;
+.info { font-size: 16px; text-shadow:0 0 10px #00ff41; margin:8px 0; }
+h1 { text-shadow: 0 0 15px #00ff41; margin: 4px 0 3px 0; font-size: 18px; /* Título mucho más pequeño */
+letter-spacing: 2px;
+}
+.byline {
+font-size: 11px; /* Texto "by Mariano..." más pequeño */
+margin-bottom: 6px;
+opacity: 0.9;
 }
 .instructions {
-margin-top: 8px;
-font-size: 14px;
+margin-top: 6px;
+font-size: 12px; /* Instrucciones más pequeñas */
 color: #00ff41;
 text-shadow: 0 0 8px #00ff41;
+line-height: 1.3;
 }
 </style>
 </head>
 <body>
 <div style="text-align: center; position: relative; width: 100%; max-width: 416px;">
-<h1>PAC-MAN NEON - FAMILIA</h1>
+<h1>PACMAN FAMILY</h1>
+<div class="byline">by Mariano Damian ver 1.01</div>
 <div class="info">
-Puntos: <span id="points">0</span>  Nivel: <span id="level">1</span>  Vidas: <span id="lives">20</span><br>
+Puntos: <span id="points">0</span>  
+Nivel: <span id="level">1</span>  
+Vidas: <span id="lives">20</span><br>
 Munición: <span id="ammo">1000</span>
 </div>
 <canvas id="game" width="416" height="544"></canvas>
@@ -191,7 +201,6 @@ ctx.globalAlpha = 1.0;
 ctx.shadowBlur = 0;
 }
 // ==================== CONTROLES ====================
-// Teclado (Computadora)
 window.addEventListener('keydown', e => {
 keys[e.key] = true;
 if (e.key === ' ') {
@@ -200,7 +209,7 @@ shoot();
 }
 });
 window.addEventListener('keyup', e => keys[e.key] = false);
-// Táctil (Celular)
+// Táctil
 canvas.addEventListener('touchstart', (e) => {
 e.preventDefault();
 const rect = canvas.getBoundingClientRect();
@@ -208,7 +217,7 @@ const touch = e.touches[0];
 touchTargetX = touch.clientX - rect.left;
 touchTargetY = touch.clientY - rect.top;
 isTouching = true;
-shoot(); // Dispara al tocar
+shoot();
 });
 canvas.addEventListener('touchmove', (e) => {
 e.preventDefault();
@@ -218,19 +227,14 @@ const touch = e.touches[0];
 touchTargetX = touch.clientX - rect.left;
 touchTargetY = touch.clientY - rect.top;
 });
-canvas.addEventListener('touchend', () => {
-isTouching = false;
-});
-// Movimiento según dispositivo
+canvas.addEventListener('touchend', () => isTouching = false);
 function movePacman() {
 let nx = pacman.x;
 let ny = pacman.y;
-// Modo Computadora (teclas)
 if (keys['ArrowRight'] || keys['d']) { nx += pacman.speed; pacman.direction = 'right'; }
 if (keys['ArrowLeft'] || keys['a']) { nx -= pacman.speed; pacman.direction = 'left'; }
 if (keys['ArrowUp'] || keys['w']) { ny -= pacman.speed; pacman.direction = 'up'; }
 if (keys['ArrowDown'] || keys['s']) { ny += pacman.speed; pacman.direction = 'down'; }
-// Modo Celular (toque)
 if (isTouching) {
 const centerX = pacman.x + TILE_SIZE / 2;
 const centerY = pacman.y + TILE_SIZE / 2;
@@ -248,7 +252,6 @@ pacman.direction = dy > 0 ? 'down' : 'up';
 }
 }
 }
-// Aplicar movimiento si no hay pared
 if (!isWall(nx+6, ny+6) && !isWall(nx+TILE_SIZE-6, ny+6) &&
 !isWall(nx+6, ny+TILE_SIZE-6) && !isWall(nx+TILE_SIZE-6, ny+TILE_SIZE-6)) {
 pacman.x = nx;
@@ -262,7 +265,8 @@ return MAP[my] && MAP[my][mx] === '1';
 }
 function shoot() {
 if (ammo <= 0) return;
-ammo--; document.getElementById('ammo').textContent = ammo;
+ammo--;
+document.getElementById('ammo').textContent = ammo;
 const speed = 10;
 let b = {x: pacman.x + TILE_SIZE/2, y: pacman.y + TILE_SIZE/2, dx:0, dy:0};
 if (pacman.direction === 'right') b.dx = speed;
