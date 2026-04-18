@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><title>Pac-Man Neon - Familia</title>
+
+<style>
+body { margin:0; padding:0; background:#000; color:#00ff41; font-family:'Courier New', monospace; display:flex; justify-content:center; align-items:center; min-height:100vh; overflow:hidden; touch-action: none;
+}
+canvas { border:8px solid #00ff41; box-shadow:0 0 40px #00ff41; image-rendering:pixelated; max-width: 100%;
+height: auto;
+touch-action: none;
+}
+.info { font-size:22px; text-shadow:0 0 10px #00ff41; margin:10px; }
+h1 { text-shadow: 0 0 20px #00ff41; margin: 8px 0 5px 0; font-size: 28px;
+}
+.instructions {
+margin-top: 8px;
+font-size: 14px;
+color: #00ff41;
+text-shadow: 0 0 8px #00ff41;
+}
+</style>
+</head>
+<body>
+<div style="text-align: center; position: relative; width: 100%; max-width: 416px;">
+<h1>PAC-MAN NEON - FAMILIA</h1>
+<div class="info">
+Puntos: <span id="points">0</span>  Nivel: <span id="level">1</span>  Vidas: <span id="lives">20</span><br>
+Munición: <span id="ammo">1000</span>
+</div>
+<canvas id="game" width="416" height="544"></canvas>
+<div class="instructions" id="instructions">
+Computadora: Flechas o WASD + Espacio<br>
+Celular: Toca la pantalla para mover y disparar
+</div>
+</div>
+<script>
+const imageUrls = ["mariano.jpg", "jorgelina.jpg", "marcos.jpg", "jeremias.jpg"];
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const TILE_SIZE = 32;
+let MAP = [];
+let pacman = { x: 0, y: 0, speed: 3.5, direction: 'right', mouthAngle: 0.2 };
+let score = 0, level = 1, lives = 20, ammo = 1000;
+let dots = [], fruits = [], ghosts = [], bullets = [], keys = {};
+let gameOver = false, powerMode = false, powerTimer = 0;
+let ghostImages = [];
+let hitMessages = [];
+const nombres = ["Mamo", "Jor", "Marcos", "Jere"];
+// Variables para control táctil
+let touchTargetX = 0;
+let touchTargetY = 0;
+let isTouching = false;
+// Cargar imágenes
+async function loadImages() {
+for (let url of imageUrls) {
+const img = new Image();
+await new Promise((resolve) => {
+img.onload = resolve;
+img.onerror = () => resolve();
+img.src = url;
+});
+ghostImages.push(img);
+}
+startGame();
+}
+function startGame() {
+resetLevel();
+requestAnimationFrame(gameLoop);
+}
+// ==================== MAPA Y DIBUJO ====================
+function createSimpleBorderMaze() {
+MAP = Array(17).fill().map(() => Array(13).fill('2'));
+for (let x = 0; x < 13; x++) { MAP[0][x] = MAP[16][x] = '1'; }
+for (let y = 0; y < 17; y++) { MAP[y][0] = MAP[y][12] = '1'; }
+}
+function getRandomPathPosition() {
+const x = Math.floor(Math.random() * 11) + 1;
+const y = Math.floor(Math.random() * 15) + 1;
+return { x: x * TILE_SIZE + TILE_SIZE/2, y: y * TILE_SIZE + TILE_SIZE/2 };
+}
+function createDots() {
+dots = [];
+for (let y = 1; y < 16; y++) for (let x = 1; x < 12; x++) {
+dots.push({ x: x*TILE_SIZE + TILE_SIZE/2, y: y*TILE_SIZE + TILE_SIZE/2 });
+}
+}
+function createFruits() {
+fruits = [];
+for (let i = 0; i < 4; i++) {
+const p = getRandomPathPosition();
+fruits.push({x: p.x, y: p.y, type: i%2===0?'cherry':'apple', points: i%2===0?100:150});
+}
+}
+function createGhosts() {
+ghosts = [];
+for (let i = 0; i < 4; i++) {
+const p = getRandomPathPosition();
+ghosts.push({
+x: p.x - TILE_SIZE/2,
+y: p.y - TILE_SIZE/2,
+imgIndex: i,
+nextDir: null,
+isEdible: false,
+edibleTimer: 0
+});
+}
+}
+function drawMap() {
+ctx.fillStyle = '#000';
+ctx.fillRect(0, 0, canvas.width, canvas.height);
+ctx.fillStyle = '#00ff41';
+ctx.shadowBlur = 20; ctx.shadowColor = '#00ff41';
+ctx.fillRect(0,0,canvas.width,TILE_SIZE);
+ctx.fillRect(0,canvas.height-TILE_SIZE,canvas.width,TILE_SIZE);
+ctx.fillRect(0,0,TILE_SIZE,canvas.height);
+ctx.fillRect(canvas.width-TILE_SIZE,0,TILE_SIZE,canvas.height);
+ctx.shadowBlur = 0;
+}
+function drawDots() {
+ctx.fillStyle = '#fff';
+for (let d of dots) {
+ctx.beginPath(); ctx.arc(d.x, d.y, 6, 0, Math.PI*2); ctx.fill();
+}
+}
+function drawFruits() {
+ctx.font = '28px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+for (let f of fruits) ctx.fillText(f.type==='cherry'?'🍒':'🍎', f.x, f.y);
+}
+function drawPacman() {
+ctx.fillStyle = '#ffff00'; ctx.shadowBlur = 20; ctx.shadowColor = '#ffff00';
+ctx.beginPath();
+let start = 0;
+if (pacman.direction === 'right') start = pacman.mouthAngle;
+else if (pacman.direction === 'left') start = Math.PI + pacman.mouthAngle;
+else if (pacman.direction === 'up') start = Math.PI*1.5 + pacman.mouthAngle;
+else if (pacman.direction === 'down') start = Math.PI*0.5 + pacman.mouthAngle;
+ctx.arc(pacman.x + TILE_SIZE/2, pacman.y + TILE_SIZE/2, TILE_SIZE/2-3, start, Math.PI*2 - start);
+ctx.lineTo(pacman.x + TILE_SIZE/2, pacman.y + TILE_SIZE/2);
+ctx.fill();
+ctx.shadowBlur = 0;
+ctx.fillStyle = '#000';
+const eyeX = pacman.direction === 'left' ? -7 : 7;
+ctx.beginPath(); ctx.arc(pacman.x + TILE_SIZE/2 + eyeX, pacman.y + TILE_SIZE/2 -7, 5, 0, Math.PI*2); ctx.fill();
+}
+function drawBullets() {
+ctx.fillStyle = '#ff00ff'; ctx.shadowBlur = 12; ctx.shadowColor = '#ff00ff';
+for (let b of bullets) {
+ctx.beginPath(); ctx.arc(b.x, b.y, 6, 0, Math.PI*2); ctx.fill();
+}
+ctx.shadowBlur = 0;
+}
+function drawGhosts() {
+for (let g of ghosts) {
+const img = ghostImages[g.imgIndex];
+const cx = g.x + TILE_SIZE / 2;
+const cy = g.y + TILE_SIZE / 2 - 8;
+const size = TILE_SIZE * 1.18;
+if (g.isEdible) ctx.globalAlpha = 0.45;
+if (img && img.complete && img.width > 0) {
+ctx.save();
+ctx.beginPath();
+ctx.arc(cx, cy, size/2 - 5, 0, Math.PI * 2);
+ctx.clip();
+ctx.drawImage(img, cx - size/2, cy - size/2 - 12, size, size);
+ctx.restore();
+} else {
+ctx.fillStyle = g.isEdible ? '#88ccff' : '#ff5555';
+ctx.font = '42px Arial';
+ctx.textAlign = 'center';
+ctx.fillText('👤', cx, cy + 15);
+}
+ctx.globalAlpha = 1.0;
+}
+}
+function drawHitMessages() {
+ctx.textAlign = 'center';
+ctx.textBaseline = 'middle';
+for (let i = hitMessages.length - 1; i >= 0; i--) {
+const m = hitMessages[i];
+const alpha = Math.max(0, (m.time - Date.now()) / 900);
+if (alpha <= 0) { hitMessages.splice(i, 1); continue; }
+ctx.globalAlpha = alpha * 0.95;
+ctx.fillStyle = '#ffff00';
+ctx.shadowBlur = 30;
+ctx.shadowColor = '#ffff00';
+ctx.font = 'bold 46px Courier New';
+ctx.fillText(m.text, m.x, m.y);
+}
+ctx.globalAlpha = 1.0;
+ctx.shadowBlur = 0;
+}
+// ==================== CONTROLES ====================
+// Teclado (Computadora)
+window.addEventListener('keydown', e => {
+keys[e.key] = true;
+if (e.key === ' ') {
+e.preventDefault();
+shoot();
+}
+});
+window.addEventListener('keyup', e => keys[e.key] = false);
+// Táctil (Celular)
+canvas.addEventListener('touchstart', (e) => {
+e.preventDefault();
+const rect = canvas.getBoundingClientRect();
+const touch = e.touches[0];
+touchTargetX = touch.clientX - rect.left;
+touchTargetY = touch.clientY - rect.top;
+isTouching = true;
+shoot(); // Dispara al tocar
+});
+canvas.addEventListener('touchmove', (e) => {
+e.preventDefault();
+if (!isTouching) return;
+const rect = canvas.getBoundingClientRect();
+const touch = e.touches[0];
+touchTargetX = touch.clientX - rect.left;
+touchTargetY = touch.clientY - rect.top;
+});
+canvas.addEventListener('touchend', () => {
+isTouching = false;
+});
+// Movimiento según dispositivo
+function movePacman() {
+let nx = pacman.x;
+let ny = pacman.y;
+// Modo Computadora (teclas)
+if (keys['ArrowRight'] || keys['d']) { nx += pacman.speed; pacman.direction = 'right'; }
+if (keys['ArrowLeft'] || keys['a']) { nx -= pacman.speed; pacman.direction = 'left'; }
+if (keys['ArrowUp'] || keys['w']) { ny -= pacman.speed; pacman.direction = 'up'; }
+if (keys['ArrowDown'] || keys['s']) { ny += pacman.speed; pacman.direction = 'down'; }
+// Modo Celular (toque)
+if (isTouching) {
+const centerX = pacman.x + TILE_SIZE / 2;
+const centerY = pacman.y + TILE_SIZE / 2;
+const dx = touchTargetX - centerX;
+const dy = touchTargetY - centerY;
+const dist = Math.hypot(dx, dy);
+if (dist > 15) {
+const moveSpeed = pacman.speed * 1.15;
+nx = pacman.x + (dx / dist) * moveSpeed;
+ny = pacman.y + (dy / dist) * moveSpeed;
+if (Math.abs(dx) > Math.abs(dy)) {
+pacman.direction = dx > 0 ? 'right' : 'left';
+} else {
+pacman.direction = dy > 0 ? 'down' : 'up';
+}
+}
+}
+// Aplicar movimiento si no hay pared
+if (!isWall(nx+6, ny+6) && !isWall(nx+TILE_SIZE-6, ny+6) &&
+!isWall(nx+6, ny+TILE_SIZE-6) && !isWall(nx+TILE_SIZE-6, ny+TILE_SIZE-6)) {
+pacman.x = nx;
+pacman.y = ny;
+}
+}
+function isWall(x, y) {
+const mx = Math.floor(x / TILE_SIZE);
+const my = Math.floor(y / TILE_SIZE);
+return MAP[my] && MAP[my][mx] === '1';
+}
+function shoot() {
+if (ammo <= 0) return;
+ammo--; document.getElementById('ammo').textContent = ammo;
+const speed = 10;
+let b = {x: pacman.x + TILE_SIZE/2, y: pacman.y + TILE_SIZE/2, dx:0, dy:0};
+if (pacman.direction === 'right') b.dx = speed;
+else if (pacman.direction === 'left') b.dx = -speed;
+else if (pacman.direction === 'up') b.dy = -speed;
+else if (pacman.direction === 'down') b.dy = speed;
+bullets.push(b);
+}
+function moveBullets() {
+for (let i = bullets.length-1; i >= 0; i--) {
+const b = bullets[i];
+b.x += b.dx; b.y += b.dy;
+if (b.x<0 || b.x>canvas.width || b.y<0 || b.y>canvas.height || isWall(b.x,b.y)) {
+bullets.splice(i,1); continue;
+}
+for (let j = ghosts.length-1; j >= 0; j--) {
+const g = ghosts[j];
+const dist = Math.hypot(b.x - (g.x+TILE_SIZE/2), b.y - (g.y+TILE_SIZE/2));
+if (dist < TILE_SIZE*0.7) {
+hitMessages.push({ text: nombres[g.imgIndex], x: g.x + TILE_SIZE/2, y: g.y + TILE_SIZE/2 - 45, time: Date.now() + 1000 });
+g.isEdible = true;
+g.edibleTimer = Date.now() + 10000;
+bullets.splice(i,1);
+score += 100;
+break;
+}
+}
+}
+}
+function moveGhosts() {
+const base = 2.0 + (level-1)*0.2;
+for (let g of ghosts) {
+const sp = g.isEdible ? 1.25 : base;
+let nx = g.x, ny = g.y;
+if (!g.nextDir || Math.random() < 0.06) {
+const dirs = [{dx:sp,dy:0},{dx:-sp,dy:0},{dx:0,dy:-sp},{dx:0,dy:sp}];
+g.nextDir = dirs[Math.floor(Math.random()*4)];
+}
+nx += g.nextDir.dx; ny += g.nextDir.dy;
+if (!isWall(nx+6,ny+6) && !isWall(nx+TILE_SIZE-6,ny+6) && !isWall(nx+6,ny+TILE_SIZE-6) && !isWall(nx+TILE_SIZE-6,ny+TILE_SIZE-6)) {
+g.x = nx; g.y = ny;
+} else g.nextDir = null;
+}
+}
+function checkCollisions() {
+for (let i=dots.length-1; i>=0; i--) {
+const d = dots[i];
+if (Math.hypot(pacman.x+TILE_SIZE/2 - d.x, pacman.y+TILE_SIZE/2 - d.y) < 14) {
+dots.splice(i,1); score += 10;
+}
+}
+for (let i=fruits.length-1; i>=0; i--) {
+const f = fruits[i];
+if (Math.hypot(pacman.x+TILE_SIZE/2 - f.x, pacman.y+TILE_SIZE/2 - f.y) < 20) {
+score += f.points; fruits.splice(i,1);
+const t = Date.now();
+for (let g of ghosts) { g.isEdible = true; g.edibleTimer = t + 10000; }
+powerMode = true; powerTimer = t + 10000;
+}
+}
+for (let g of ghosts) {
+const dist = Math.hypot(pacman.x+TILE_SIZE/2 - (g.x+TILE_SIZE/2), pacman.y+TILE_SIZE/2 - (g.y+TILE_SIZE/2));
+if (dist < TILE_SIZE * 0.8) {
+if (g.isEdible) {
+hitMessages.push({ text: nombres[g.imgIndex], x: g.x + TILE_SIZE/2, y: g.y + TILE_SIZE/2 - 45, time: Date.now() + 1000 });
+score += 300;
+const p = getRandomPathPosition();
+g.x = p.x - TILE_SIZE/2; g.y = p.y - TILE_SIZE/2;
+g.isEdible = false;
+} else if (powerMode) {
+score += 200;
+g.isEdible = true; g.edibleTimer = Date.now() + 10000;
+} else {
+lives--; document.getElementById('lives').textContent = lives;
+const p = getRandomPathPosition();
+g.x = p.x - TILE_SIZE/2; g.y = p.y - TILE_SIZE/2;
+if (lives <= 0) gameOver = true;
+}
+}
+}
+const now = Date.now();
+for (let g of ghosts) if (g.isEdible && now > g.edibleTimer) g.isEdible = false;
+if (powerMode && now > powerTimer) powerMode = false;
+document.getElementById('points').textContent = score;
+if (dots.length === 0) {
+level++; document.getElementById('level').textContent = level;
+lives = 20; document.getElementById('lives').textContent = lives;
+ammo = 1000; document.getElementById('ammo').textContent = ammo;
+resetLevel();
+}
+}
+function resetLevel() {
+createSimpleBorderMaze();
+const start = getRandomPathPosition();
+pacman.x = start.x - TILE_SIZE/2;
+pacman.y = start.y - TILE_SIZE/2;
+createDots(); createFruits(); createGhosts();
+bullets = []; powerMode = false;
+}
+function gameLoop() {
+if (gameOver) {
+ctx.fillStyle = 'rgba(0,0,0,0.9)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+ctx.fillStyle = '#ff0000'; ctx.font = 'bold 48px Courier New'; ctx.textAlign = 'center';
+ctx.fillText('GAME OVER', canvas.width/2, canvas.height/2);
+return;
+}
+movePacman();
+moveGhosts();
+moveBullets();
+checkCollisions();
+drawMap(); drawDots(); drawFruits();
+drawPacman(); drawGhosts(); drawBullets(); drawHitMessages();
+pacman.mouthAngle = Math.abs(Math.sin(Date.now()/70)) * 0.5 + 0.15;
+requestAnimationFrame(gameLoop);
+}
+loadImages();
+</script>
+</body></html>
